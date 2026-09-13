@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CeliacWriteOff local data (uploaded receipts, sqlite db)
+/data/
