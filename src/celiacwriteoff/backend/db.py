@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL DEFAULT '',
+  is_admin INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -19,6 +21,24 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id),
+  success INTEGER NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS items (
@@ -48,9 +68,15 @@ CREATE TABLE IF NOT EXISTS items (
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after the initial CREATE TABLE for databases that predate them."""
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
-    if "user_id" not in columns:
+    item_columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    if "user_id" not in item_columns:
         conn.execute("ALTER TABLE items ADD COLUMN user_id TEXT REFERENCES users(id)")
+
+    user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "full_name" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
+    if "is_admin" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 
 
 def init_db() -> None:
@@ -222,14 +248,21 @@ def new_user_id() -> str:
     return uuid.uuid4().hex
 
 
-def create_user(conn: sqlite3.Connection, email: str, password_hash: str) -> str:
+def create_user(conn: sqlite3.Connection, email: str, password_hash: str, full_name: str) -> str:
     user_id = new_user_id()
     conn.execute(
-        "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)",
-        (user_id, email, password_hash),
+        "INSERT INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?)",
+        (user_id, email, password_hash, full_name),
     )
     conn.commit()
     return user_id
+
+
+def set_user_password(conn: sqlite3.Connection, user_id: str, password_hash: str) -> None:
+    conn.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+    )
+    conn.commit()
 
 
 def get_user_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | None:
@@ -263,4 +296,83 @@ def get_session_user(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None
 
 def delete_session(conn: sqlite3.Connection, token: str) -> None:
     conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    conn.commit()
+
+
+def delete_sessions_for_user(conn: sqlite3.Connection, user_id: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.commit()
+
+
+def record_login_attempt(
+    conn: sqlite3.Connection,
+    email: str,
+    user_id: str | None,
+    success: bool,
+    ip_address: str | None,
+    user_agent: str | None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO login_attempts (id, email, user_id, success, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (uuid.uuid4().hex, email, user_id, int(success), ip_address, user_agent),
+    )
+    conn.commit()
+
+
+def list_login_attempts(
+    conn: sqlite3.Connection, limit: int, offset: int, email: str | None = None
+) -> list[sqlite3.Row]:
+    if email:
+        return conn.execute(
+            """
+            SELECT * FROM login_attempts WHERE email LIKE ?
+            ORDER BY created_at DESC LIMIT ? OFFSET ?
+            """,
+            (f"%{email}%", limit, offset),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM login_attempts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    ).fetchall()
+
+
+def count_login_attempts(conn: sqlite3.Connection, email: str | None = None) -> int:
+    if email:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM login_attempts WHERE email LIKE ?",
+            (f"%{email}%",),
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) AS count FROM login_attempts").fetchone()
+    return row["count"]
+
+
+def create_reset_token(
+    conn: sqlite3.Connection, token: str, user_id: str, expires_at: str
+) -> None:
+    conn.execute(
+        "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+        (token, user_id, expires_at),
+    )
+    conn.commit()
+
+
+def get_valid_reset_token(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT * FROM password_reset_tokens
+        WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')
+        """,
+        (token,),
+    ).fetchone()
+
+
+def consume_reset_token(conn: sqlite3.Connection, token: str) -> None:
+    conn.execute(
+        "UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token = ?",
+        (token,),
+    )
     conn.commit()
