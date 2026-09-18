@@ -1,6 +1,7 @@
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from password_policy import validate_password_strength
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 Source = Literal["file", "manual"]
 Status = Literal["pending", "extracted", "failed", "verified"]
@@ -66,19 +67,64 @@ class ItemUpdate(BaseModel):
 
 
 class UserCreate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=200)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str
+    confirm_password: str
+    recaptcha_token: str
+
+    @model_validator(mode="after")
+    def check_password(self) -> "UserCreate":
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        validate_password_strength(self.password)
+        return self
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    recaptcha_token: str
 
 
 class UserOut(BaseModel):
     id: str
     email: str
+    full_name: str
+    is_admin: bool
     created_at: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password: str
+
+    @model_validator(mode="after")
+    def check_password(self) -> "ResetPasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        validate_password_strength(self.new_password)
+        return self
+
+
+class LoginAttemptOut(BaseModel):
+    id: str
+    email: str
+    user_id: str | None
+    success: bool
+    ip_address: str | None
+    user_agent: str | None
+    created_at: str
+
+
+class LoginAttemptsPage(BaseModel):
+    attempts: list[LoginAttemptOut]
+    total: int
 
 
 class ItemOut(BaseModel):

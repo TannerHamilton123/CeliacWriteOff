@@ -5,6 +5,7 @@ import db
 import storage
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routers.admin import router as admin_router
 from routers.auth import router as auth_router
 from routers.items import router as items_router
 
@@ -28,6 +29,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(items_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
