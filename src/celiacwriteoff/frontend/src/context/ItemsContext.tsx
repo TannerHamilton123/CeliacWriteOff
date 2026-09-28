@@ -7,6 +7,9 @@ export interface LineItem {
   item_quantity: number | null
   item_price: number | null
   is_gluten_substitute: boolean
+  substitute_category?: string | null
+  regular_product_name?: string | null
+  regular_price?: number | null
 }
 
 export type ItemSource = 'file' | 'manual'
