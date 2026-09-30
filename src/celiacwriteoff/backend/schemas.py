@@ -16,6 +16,22 @@ class LineItem(BaseModel):
     allergens_tags: list[str] = []
     contains_gluten: bool | None = None
     labeled_gluten_free: bool | None = None
+    # Set once the user marks a gluten substitute and picks what kind of product it is.
+    substitute_category: str | None = None
+    regular_product_name: str | None = None
+    regular_price: float | None = None
+
+
+class SubstituteCategoryOut(BaseModel):
+    key: str
+    label: str
+
+
+class CategoryPriceOut(BaseModel):
+    category: str
+    product_name: str | None = None
+    size: str | None = None
+    price: float | None = None
 
 
 class ItemCreate(BaseModel):

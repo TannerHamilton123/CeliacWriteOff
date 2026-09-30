@@ -60,12 +60,13 @@ function ReviewItems() {
     cancelEditing()
   }
 
-  function toggleGlutenSubstitute(index: number) {
-    if (!draft) return
-    const lineItems = draft.lineItems.map((li, i) =>
-      i === index ? { ...li, is_gluten_substitute: !li.is_gluten_substitute } : li,
+  function updateLineItem(index: number, changes: Partial<LineItem>) {
+    setDraft(prev =>
+      prev && {
+        ...prev,
+        lineItems: prev.lineItems.map((li, i) => (i === index ? { ...li, ...changes } : li)),
+      },
     )
-    setDraft({ ...draft, lineItems })
   }
 
   async function handleDelete(id: string) {
@@ -154,7 +155,7 @@ function ReviewItems() {
                 </div>
                 <LineItemsTable
                   lineItems={draft.lineItems}
-                  onToggleGlutenSubstitute={toggleGlutenSubstitute}
+                  onUpdateLineItem={updateLineItem}
                 />
                 <div className="item-actions">
                   <button type="button" className="counter" onClick={() => saveEditing(item)}>

@@ -124,12 +124,13 @@ function AddItems() {
     }
   }
 
-  function toggleGlutenSubstitute(index: number) {
-    if (!current) return
-    const lineItems = current.lineItems.map((li, i) =>
-      i === index ? { ...li, is_gluten_substitute: !li.is_gluten_substitute } : li,
+  function updateLineItem(index: number, changes: Partial<LineItem>) {
+    setCurrent(prev =>
+      prev && {
+        ...prev,
+        lineItems: prev.lineItems.map((li, i) => (i === index ? { ...li, ...changes } : li)),
+      },
     )
-    setCurrent({ ...current, lineItems })
   }
 
   async function handleDiscard() {
@@ -281,7 +282,7 @@ function AddItems() {
                 </div>
                 <LineItemsTable
                   lineItems={current.lineItems}
-                  onToggleGlutenSubstitute={toggleGlutenSubstitute}
+                  onUpdateLineItem={updateLineItem}
                 />
                 <div className="item-actions">
                   <button type="button" className="counter" onClick={handleConfirm}>

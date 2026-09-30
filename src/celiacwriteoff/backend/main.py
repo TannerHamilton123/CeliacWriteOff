@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.admin import router as admin_router
 from routers.auth import router as auth_router
 from routers.items import router as items_router
+from routers.substitutes import router as substitutes_router
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(items_router)
 app.include_router(admin_router)
+app.include_router(substitutes_router)
 
 
 @app.get("/")
