@@ -20,6 +20,7 @@ class LineItem(BaseModel):
     substitute_category: str | None = None
     regular_product_name: str | None = None
     regular_price: float | None = None
+    regular_price_store: str | None = None
 
 
 class SubstituteCategoryOut(BaseModel):
@@ -32,6 +33,7 @@ class CategoryPriceOut(BaseModel):
     product_name: str | None = None
     size: str | None = None
     price: float | None = None
+    store_name: str | None = None
 
 
 class ItemCreate(BaseModel):

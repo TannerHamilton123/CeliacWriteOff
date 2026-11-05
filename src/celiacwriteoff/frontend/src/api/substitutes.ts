@@ -10,6 +10,7 @@ export interface CategoryPrice {
   product_name: string | null
   size: string | null
   price: number | null
+  store_name: string | null
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -24,7 +25,9 @@ export function fetchSubstituteCategories(): Promise<SubstituteCategory[]> {
   return getJson('/substitutes/categories')
 }
 
-/** Cheapest regular (non-gluten-free) product in the category at the configured Kroger store. */
-export function fetchCheapestInCategory(category: string): Promise<CategoryPrice> {
-  return getJson(`/substitutes/categories/${encodeURIComponent(category)}/cheapest`)
+/** Cheapest regular (non-gluten-free) product in the category at the Kroger store
+ * nearest `address` (the receipt's merchant address). */
+export function fetchCheapestInCategory(category: string, address: string): Promise<CategoryPrice> {
+  const query = address.trim() ? `?${new URLSearchParams({ address: address.trim() })}` : ''
+  return getJson(`/substitutes/categories/${encodeURIComponent(category)}/cheapest${query}`)
 }

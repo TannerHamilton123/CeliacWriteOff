@@ -155,6 +155,7 @@ function ReviewItems() {
                 </div>
                 <LineItemsTable
                   lineItems={draft.lineItems}
+                  merchantAddress={draft.merchant_address}
                   onUpdateLineItem={updateLineItem}
                 />
                 <div className="item-actions">

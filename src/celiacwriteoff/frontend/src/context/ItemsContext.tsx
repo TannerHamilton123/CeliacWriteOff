@@ -10,6 +10,7 @@ export interface LineItem {
   substitute_category?: string | null
   regular_product_name?: string | null
   regular_price?: number | null
+  regular_price_store?: string | null
 }
 
 export type ItemSource = 'file' | 'manual'

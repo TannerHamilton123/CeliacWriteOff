@@ -1,6 +1,7 @@
-"""OAuth2 client-credentials access to Kroger's Product API, for allergen and price lookups."""
+"""OAuth2 client-credentials access to Kroger's Product and Locations APIs, for allergen and price lookups."""
 
 import os
+import re
 import time
 from typing import Any
 
@@ -9,11 +10,17 @@ from dotenv import load_dotenv
 
 TOKEN_URL = "https://api.kroger.com/v1/connect/oauth2/token"
 PRODUCTS_URL = "https://api.kroger.com/v1/products"
+LOCATIONS_URL = "https://api.kroger.com/v1/locations"
 GLUTEN_KEYWORDS = ("gluten", "cereal", "wheat")
 # Kroger caps filter.limit at 50.
 MAX_SEARCH_RESULTS = 50
+# A US ZIP code, optionally ZIP+4 ("45202" or "45202-1234").
+ZIP_CODE_PATTERN = re.compile(r"\b(\d{5})(?:-\d{4})?\b")
 
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
+# ZIP code -> nearest store. Stores rarely move, so successful lookups are kept
+# for the life of the process; failures aren't cached so they get retried.
+_store_cache: dict[str, dict[str, Any]] = {}
 
 
 def _get_access_token() -> str | None:
@@ -57,15 +64,15 @@ def _contains_gluten(allergens: list[dict[str, Any]]) -> bool | None:
     return None
 
 
-def _search_products(params: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """GET /products with the given query params; None if unconfigured or the request fails."""
+def _get_data(url: str, params: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """GET a Kroger API list endpoint; None if unconfigured or the request fails."""
     access_token = _get_access_token()
     if access_token is None:
         return None
 
     try:
         response = httpx.get(
-            PRODUCTS_URL,
+            url,
             params=params,
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=5.0,
@@ -91,7 +98,7 @@ def lookup_allergens(item_name: str) -> dict[str, Any] | None:
     if not name:
         return None
 
-    products = _search_products({"filter.term": name, "filter.limit": 1})
+    products = _get_data(PRODUCTS_URL, {"filter.term": name, "filter.limit": 1})
     product = products[0] if products else None
     if not product:
         return None
@@ -145,24 +152,64 @@ def cheapest_product(products: list[dict[str, Any]]) -> dict[str, Any] | None:
     return best
 
 
-def find_cheapest_product(search_term: str) -> dict[str, Any] | None:
-    """Cheapest product at the configured Kroger store matching `search_term`.
+def extract_zip_code(address: str) -> str | None:
+    """Pull the ZIP code out of a free-text address OCR'd from a receipt.
 
-    Kroger only includes prices when the request names a store, so this needs
-    KROGER_LOCATION_ID as well as the API credentials. Returns None if either
-    is missing, the request fails, or no matching product has a price.
+    Uses the last 5-digit match, since a street number earlier in the
+    address ("12345 Main St, Cincinnati, OH 45202") can also be 5 digits.
     """
-    load_dotenv()
-    location_id = os.getenv("KROGER_LOCATION_ID")
-    if not location_id:
+    matches = ZIP_CODE_PATTERN.findall(address)
+    return matches[-1] if matches else None
+
+
+def find_nearest_store(zip_code: str) -> dict[str, Any] | None:
+    """The Kroger-family store closest to `zip_code`, as {"location_id", "name"}."""
+    if zip_code in _store_cache:
+        return _store_cache[zip_code]
+
+    locations = _get_data(LOCATIONS_URL, {"filter.zipCode.near": zip_code, "filter.limit": 1})
+    if not locations or not locations[0].get("locationId"):
         return None
 
-    products = _search_products(
+    store = {"location_id": locations[0]["locationId"], "name": locations[0].get("name")}
+    _store_cache[zip_code] = store
+    return store
+
+
+def resolve_store(address: str | None) -> dict[str, Any] | None:
+    """Pick the store whose prices to compare against for a receipt.
+
+    Prefers the Kroger store nearest the receipt's address, so the regular
+    price reflects that area. Falls back to KROGER_LOCATION_ID when the
+    address has no ZIP code or the lookup fails; None if neither works.
+    """
+    zip_code = extract_zip_code(address) if address else None
+    if zip_code:
+        store = find_nearest_store(zip_code)
+        if store:
+            return store
+
+    load_dotenv()
+    default_location_id = os.getenv("KROGER_LOCATION_ID")
+    if default_location_id:
+        return {"location_id": default_location_id, "name": None}
+    return None
+
+
+def find_cheapest_product(search_term: str, location_id: str) -> dict[str, Any] | None:
+    """Cheapest product at the given Kroger store matching `search_term`.
+
+    Kroger only includes prices when the request names a store. Returns None
+    if credentials are missing, the request fails, or no matching product
+    has a price.
+    """
+    products = _get_data(
+        PRODUCTS_URL,
         {
             "filter.term": search_term,
             "filter.locationId": location_id,
             "filter.limit": MAX_SEARCH_RESULTS,
-        }
+        },
     )
     if not products:
         return None

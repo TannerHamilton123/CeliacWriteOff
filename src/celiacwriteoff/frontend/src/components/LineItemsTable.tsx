@@ -8,6 +8,8 @@ import type { LineItem } from '../context/ItemsContext'
 
 interface LineItemsTableProps {
   lineItems: LineItem[]
+  /** The receipt's merchant address; regular prices come from the nearest Kroger store. */
+  merchantAddress: string
   /** Merge `changes` into the line item at `index`. Must use functional state updates,
    * since price lookups resolve after other edits may have happened. */
   onUpdateLineItem: (index: number, changes: Partial<LineItem>) => void
@@ -15,7 +17,7 @@ interface LineItemsTableProps {
 
 type PriceStatus = 'loading' | 'unavailable' | 'error'
 
-function LineItemsTable({ lineItems, onUpdateLineItem }: LineItemsTableProps) {
+function LineItemsTable({ lineItems, merchantAddress, onUpdateLineItem }: LineItemsTableProps) {
   const [categories, setCategories] = useState<SubstituteCategory[]>([])
   const [priceStatus, setPriceStatus] = useState<Record<number, PriceStatus>>({})
   // The category most recently requested per row, so a slow response for an
@@ -48,6 +50,7 @@ function LineItemsTable({ lineItems, onUpdateLineItem }: LineItemsTableProps) {
         substitute_category: null,
         regular_product_name: null,
         regular_price: null,
+        regular_price_store: null,
       })
     } else {
       onUpdateLineItem(index, { is_gluten_substitute: true })
@@ -60,6 +63,7 @@ function LineItemsTable({ lineItems, onUpdateLineItem }: LineItemsTableProps) {
       substitute_category: category || null,
       regular_product_name: null,
       regular_price: null,
+      regular_price_store: null,
     })
     if (!category) {
       setStatus(index, null)
@@ -68,11 +72,12 @@ function LineItemsTable({ lineItems, onUpdateLineItem }: LineItemsTableProps) {
 
     setStatus(index, 'loading')
     try {
-      const result = await fetchCheapestInCategory(category)
+      const result = await fetchCheapestInCategory(category, merchantAddress)
       if (latestRequest.current[index] !== category) return
       onUpdateLineItem(index, {
         regular_product_name: result.product_name,
         regular_price: result.price,
+        regular_price_store: result.store_name,
       })
       setStatus(index, result.price == null ? 'unavailable' : null)
     } catch {
@@ -87,9 +92,8 @@ function LineItemsTable({ lineItems, onUpdateLineItem }: LineItemsTableProps) {
     if (status === 'loading') return 'Looking up…'
     if (status === 'error') return 'Lookup failed'
     if (li.regular_price == null) return 'Unavailable'
-    return (
-      <span title={li.regular_product_name ?? undefined}>${li.regular_price.toFixed(2)}</span>
-    )
+    const source = [li.regular_product_name, li.regular_price_store].filter(Boolean).join(' at ')
+    return <span title={source || undefined}>${li.regular_price.toFixed(2)}</span>
   }
 
   return (

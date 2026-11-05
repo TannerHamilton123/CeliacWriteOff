@@ -282,6 +282,7 @@ function AddItems() {
                 </div>
                 <LineItemsTable
                   lineItems={current.lineItems}
+                  merchantAddress={current.merchant_address}
                   onUpdateLineItem={updateLineItem}
                 />
                 <div className="item-actions">
